@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
-import { Search, Loader2, Copy, RefreshCw, ArrowRight, CheckCircle2, TrendingUp } from 'lucide-react';
+import { Search, Loader2, Copy, RefreshCw, ArrowRight, CheckCircle2, TrendingUp, Globe } from 'lucide-react';
 import { motion } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 import { toast } from 'sonner';
 import { SEOMetadata, ProjectData } from '../types';
-import { SEO_PROMPT } from '../prompts';
+import { SEO_PROMPT, TRANSLATE_PROMPT } from '../prompts';
 import { cn } from '../lib/utils';
-
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+import { LANGUAGES } from '../constants';
 
 interface SEOGeneratorProps {
   project: ProjectData;
@@ -17,18 +16,49 @@ interface SEOGeneratorProps {
 
 export default function SEOGenerator({ project, onUpdate, onNext }: SEOGeneratorProps) {
   const [loading, setLoading] = useState(false);
+  const [translationLang, setTranslationLang] = useState('Spanish');
+  const [translating, setTranslating] = useState(false);
+
+  const translateSEO = async () => {
+    if (!project.seo) return;
+    setTranslating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const prompt = TRANSLATE_PROMPT(JSON.stringify(project.seo), translationLang);
+      
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
+      });
+      
+      const text = result.text;
+      const cleanedText = text.replace(/```json|```/g, '').trim();
+      const parsedTranslation = JSON.parse(cleanedText);
+      
+      const newTranslations = { ...(project.seoTranslations || {}), [translationLang]: parsedTranslation };
+      onUpdate({ seoTranslations: newTranslations });
+      toast.success(`SEO metadata translated to ${translationLang}!`);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to translate SEO.');
+    } finally {
+      setTranslating(false);
+    }
+  };
 
   const generateSEO = async () => {
     if (!project.selectedIdea) return;
     setLoading(true);
     try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       const prompt = SEO_PROMPT(
         project.selectedIdea.title,
         project.niche || '',
-        project.targetAudience || ''
+        project.targetAudience || '',
+        project.targetLanguage || 'English'
       );
       
-      const result = await genAI.models.generateContent({
+      const result = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt
       });
@@ -36,7 +66,7 @@ export default function SEOGenerator({ project, onUpdate, onNext }: SEOGenerator
       const text = result.text;
       const cleanedText = text.replace(/```json|```/g, '').trim();
       const parsedSEO = JSON.parse(cleanedText);
-      onUpdate({ seo: parsedSEO, currentStep: 3 });
+      onUpdate({ seo: parsedSEO, currentStep: 6 });
       toast.success('SEO metadata optimized!');
     } catch (error) {
       console.error(error);
@@ -64,19 +94,56 @@ export default function SEOGenerator({ project, onUpdate, onNext }: SEOGenerator
               <p className="text-sm text-zinc-500">Maximize your search visibility and CTR.</p>
             </div>
           </div>
-          <button 
-            onClick={generateSEO}
-            disabled={loading || !project.selectedIdea}
-            className="px-8 py-4 bg-orange-500 text-white font-bold rounded-2xl hover:bg-orange-600 transition-all disabled:opacity-50 flex items-center gap-2 active:scale-95 shadow-lg shadow-orange-500/20"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-            {project.seo ? 'Regenerate SEO' : 'Generate SEO Metadata'}
-          </button>
+          <div className="flex gap-4">
+            <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800">
+              <select 
+                value={translationLang}
+                onChange={(e) => setTranslationLang(e.target.value)}
+                className="bg-transparent text-xs font-bold text-zinc-400 px-3 focus:outline-none"
+              >
+                {LANGUAGES.filter(l => l !== project.targetLanguage).map(lang => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
+              <button 
+                onClick={translateSEO}
+                disabled={translating || !project.seo}
+                className="px-4 py-2 bg-zinc-800 text-white text-[10px] font-bold rounded-lg hover:bg-zinc-700 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {translating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                Translate
+              </button>
+            </div>
+            <button 
+              onClick={generateSEO}
+              disabled={loading || !project.selectedIdea}
+              className="px-8 py-4 bg-orange-500 text-white font-bold rounded-2xl hover:bg-orange-600 transition-all disabled:opacity-50 flex items-center gap-2 active:scale-95 shadow-lg shadow-orange-500/20"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+              {project.seo ? 'Regenerate SEO' : 'Generate SEO Metadata'}
+            </button>
+          </div>
         </div>
       </div>
 
       {project.seo && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="lg:col-span-2">
+            {project.seoTranslations && Object.keys(project.seoTranslations).length > 0 && (
+              <div className="px-8 py-4 bg-orange-500/5 border border-zinc-800/50 rounded-[2rem] flex flex-wrap gap-2 mb-8">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest self-center mr-2">Translations:</span>
+                {Object.keys(project.seoTranslations).map(lang => (
+                  <button 
+                    key={lang}
+                    onClick={() => onUpdate({ seo: project.seoTranslations![lang] })}
+                    className="px-3 py-1 bg-zinc-800 text-zinc-400 text-[10px] font-bold rounded-full hover:bg-orange-500 hover:text-white transition-all"
+                  >
+                    {lang}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}

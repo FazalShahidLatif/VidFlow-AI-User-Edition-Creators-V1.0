@@ -1,6 +1,6 @@
-# VidFlow AI – User Edition (Creators) V1.0
+# VidFlow AI – User Edition (Creators) V3.0-Multi
 
-Welcome to **VidFlow AI**, the ultimate AI-powered YouTube content automation platform designed specifically for solo creators and beginners.
+Welcome to **VidFlow AI**, the ultimate AI-powered YouTube content automation platform designed specifically for solo creators and beginners. User Edition V3.0-Multi now includes **Advanced AI** support.
 
 ---
 
@@ -67,7 +67,7 @@ This edition is built on a **Frontend-Only Architecture**, ensuring maximum priv
 *   **V2 – Dual Language**: Support for English + 1 additional language.
 *   **V3 – Multi-Language**: Global support for 10–50 languages.
 
-**Current Version**: V1.0 (Stable)
+**Current Version**: V3.0-Multi (Stable)
 
 ---
 

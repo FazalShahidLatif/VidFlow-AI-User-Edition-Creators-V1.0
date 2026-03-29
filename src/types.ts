@@ -59,17 +59,60 @@ export interface SocialCaptions {
   hashtags: string[];
 }
 
+export interface VideoScene {
+  sceneNumber: number;
+  voiceover: string;
+  visual: string;
+  textOverlay: string;
+}
+
+export interface VideoBreakdown {
+  scenes: VideoScene[];
+  voiceoverFormatting: string;
+  visualDirection: string;
+  subtitleText: string;
+}
+
+export interface ServiceGig {
+  platform: 'Fiverr' | 'Upwork';
+  title: string;
+  description: string;
+  pricing: string;
+  tags: string[];
+}
+
 export interface ProjectData {
   id: string;
   name: string;
+  clientName?: string;
   niche: string;
   targetAudience: string;
+  contentGoal?: string;
   videoType: VideoType;
+  targetLanguage: string;
   selectedIdea?: VideoIdea;
   script?: VideoScript;
+  videoBreakdown?: VideoBreakdown;
   seo?: SEOMetadata;
+  seoTranslations?: { [language: string]: SEOMetadata };
   thumbnailPrompt?: ThumbnailPrompt;
+  thumbnailUrl?: string;
   socialCaptions?: SocialCaptions;
+  serviceGigs?: ServiceGig[];
+  translations?: { [language: string]: VideoScript };
   currentStep: number;
   updatedAt: number;
+}
+
+export interface RoadmapItem {
+  day: number;
+  topic: string;
+  type: string;
+  strategy: string;
+}
+
+export interface RoadmapData {
+  niche: string;
+  audience: string;
+  items: RoadmapItem[];
 }

@@ -1,7 +1,7 @@
 {
-  "name": "vidflow-ai-user-edition",
+  "name": "vidflow-ai-freelancer-edition-v3.0",
   "private": true,
-  "version": "1.0.0",
+  "version": "3.0.0-freelancer",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -17,6 +17,8 @@
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.546.0",
     "motion": "^12.38.0",
     "react": "^19.0.0",

@@ -6,8 +6,7 @@ import { toast } from 'sonner';
 import { VideoIdea, VideoType, ProjectData } from '../types';
 import { IDEA_PROMPT } from '../prompts';
 import { cn } from '../lib/utils';
-
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+import { LANGUAGES, VIDEO_TYPES } from '../constants';
 
 interface IdeaGeneratorProps {
   project: ProjectData;
@@ -21,14 +20,16 @@ export default function IdeaGenerator({ project, onUpdate, onNext }: IdeaGenerat
   const [niche, setNiche] = useState(project.niche || '');
   const [audience, setAudience] = useState(project.targetAudience || '');
   const [videoType, setVideoType] = useState<VideoType>(project.videoType || 'education');
+  const [targetLanguage, setTargetLanguage] = useState(project.targetLanguage || 'English');
 
   const generateIdeas = async () => {
     if (!niche || !audience) return;
     setLoading(true);
     try {
-      const prompt = IDEA_PROMPT(niche, audience, videoType);
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const prompt = IDEA_PROMPT(niche, audience, videoType, targetLanguage);
       
-      const result = await genAI.models.generateContent({
+      const result = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt
       });
@@ -37,8 +38,8 @@ export default function IdeaGenerator({ project, onUpdate, onNext }: IdeaGenerat
       const cleanedText = text.replace(/```json|```/g, '').trim();
       const parsedIdeas = JSON.parse(cleanedText);
       setIdeas(parsedIdeas);
-      onUpdate({ niche, targetAudience: audience, videoType });
-      toast.success('Generated 10 viral video ideas!');
+      onUpdate({ niche, targetAudience: audience, videoType, targetLanguage });
+      toast.success(`Generated 10 viral video ideas in ${targetLanguage}!`);
     } catch (error) {
       console.error(error);
       toast.error('Failed to generate ideas. Please try again.');
@@ -48,14 +49,14 @@ export default function IdeaGenerator({ project, onUpdate, onNext }: IdeaGenerat
   };
 
   const selectIdea = (idea: VideoIdea) => {
-    onUpdate({ selectedIdea: idea, currentStep: 1 });
+    onUpdate({ selectedIdea: idea });
     toast.success(`Selected: ${idea.title}`);
   };
 
   return (
     <div className="space-y-8">
       <div className="bg-[#111111] border border-zinc-800/50 p-8 rounded-[2.5rem] shadow-2xl shadow-black/50">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Niche</label>
             <input 
@@ -83,33 +84,43 @@ export default function IdeaGenerator({ project, onUpdate, onNext }: IdeaGenerat
               onChange={(e) => setVideoType(e.target.value as VideoType)}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-orange-500 transition-all appearance-none cursor-pointer"
             >
-              <option value="education">Education</option>
-              <option value="storytelling">Storytelling</option>
-              <option value="tutorial">Tutorial</option>
-              <option value="listicle">Listicle</option>
-              <option value="news">News & Politics</option>
-              <option value="gaming">Gaming</option>
-              <option value="vlog">Vlog / Personal</option>
-              <option value="review">Product Review</option>
-              <option value="comedy">Comedy / Entertainment</option>
-              <option value="tech">Science & Tech</option>
-              <option value="travel">Travel & Events</option>
-              <option value="fitness">Health & Fitness</option>
-              <option value="music">Music</option>
-              <option value="sports">Sports</option>
-              <option value="documentary">Documentary</option>
-              <option value="commentary">Commentary</option>
+              {VIDEO_TYPES.map(type => (
+                <option key={type.id} value={type.id}>{type.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Target Language</label>
+            <select 
+              value={targetLanguage}
+              onChange={(e) => setTargetLanguage(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-orange-500 transition-all appearance-none cursor-pointer"
+            >
+              {LANGUAGES.map(lang => (
+                <option key={lang} value={lang}>{lang}</option>
+              ))}
             </select>
           </div>
         </div>
-        <button 
-          onClick={generateIdeas}
-          disabled={loading || !niche || !audience}
-          className="w-full mt-8 py-4 bg-orange-500 text-white font-bold rounded-2xl hover:bg-orange-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95"
-        >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-          Generate 10 Viral Ideas
-        </button>
+        <div className="flex gap-4 mt-8">
+          <button 
+            onClick={generateIdeas}
+            disabled={loading || !niche || !audience}
+            className="flex-1 py-4 bg-orange-500 text-white font-bold rounded-2xl hover:bg-orange-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-orange-500/20"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+            Generate 10 Viral Ideas
+          </button>
+          
+          {project.selectedIdea && (
+            <button 
+              onClick={onNext}
+              className="px-10 py-4 bg-white text-black font-bold rounded-2xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg"
+            >
+              Next Step <ArrowRight className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

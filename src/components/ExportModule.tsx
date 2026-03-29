@@ -1,7 +1,8 @@
 import React from 'react';
-import { Download, FileText, CheckCircle2, ArrowLeft, Copy, Share2, Rocket } from 'lucide-react';
+import { Download, FileText, CheckCircle2, ArrowLeft, Copy, Share2, Rocket, FileDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
+import { jsPDF } from 'jspdf';
 import { ProjectData } from '../types';
 import { cn } from '../lib/utils';
 
@@ -13,7 +14,7 @@ interface ExportModuleProps {
 
 export default function ExportModule({ project, onBack, onReset }: ExportModuleProps) {
   const generateMarkdown = () => {
-    const watermark = `\n\n---\nGenerated with VidFlow AI – User Edition (Creators) V1.0\nhttps://vidflow.ai`;
+    const watermark = `\n\n---\nGenerated with VidFlow AI – Freelancer Edition V3.0\nhttps://vidflow.ai`;
     let content = `# ${project.seo?.title || project.selectedIdea?.title || 'Untitled Video'}\n\n`;
     
     if (project.selectedIdea) {
@@ -26,6 +27,13 @@ export default function ExportModule({ project, onBack, onReset }: ExportModuleP
         content += `#### ${i + 1}. ${s.title}\n${s.content}\n\n`;
       });
       content += `### Engagement Prompts\n- ${project.script.engagementPrompts.join('\n- ')}\n\n### CTA\n${project.script.cta}\n\n`;
+    }
+
+    if (project.videoBreakdown) {
+      content += `## Video Breakdown\n### Voiceover Formatting\n${project.videoBreakdown.voiceoverFormatting}\n\n### Visual Direction\n${project.videoBreakdown.visualDirection}\n\n### Subtitle Text\n${project.videoBreakdown.subtitleText}\n\n### Scenes\n`;
+      project.videoBreakdown.scenes.forEach((s) => {
+        content += `#### Scene ${s.sceneNumber}\n- **Voiceover:** ${s.voiceover}\n- **Visual:** ${s.visual}\n- **Text Overlay:** ${s.textOverlay}\n\n`;
+      });
     }
 
     if (project.seo) {
@@ -41,6 +49,91 @@ export default function ExportModule({ project, onBack, onReset }: ExportModuleP
     }
 
     return content + watermark;
+  };
+
+  const downloadPDF = () => {
+    const doc = new jsPDF();
+    const margin = 20;
+    let y = 20;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const contentWidth = pageWidth - (margin * 2);
+
+    const addText = (text: string, size: number = 10, isBold: boolean = false, color: [number, number, number] = [255, 255, 255]) => {
+      doc.setFontSize(size);
+      doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+      doc.setTextColor(color[0], color[1], color[2]);
+      
+      const lines = doc.splitTextToSize(text, contentWidth);
+      lines.forEach((line: string) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(line, margin, y);
+        y += (size * 0.5) + 2;
+      });
+      y += 2;
+    };
+
+    // Header
+    doc.setFillColor(249, 115, 22); // Orange-500
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('VidFlow AI', margin, 25);
+    doc.setFontSize(10);
+    doc.text('Freelancer Edition V3.0', margin, 32);
+    y = 55;
+
+    // Content
+    doc.setTextColor(0, 0, 0);
+    addText(`Project: ${project.name}`, 16, true, [0, 0, 0]);
+    if (project.clientName) addText(`Client: ${project.clientName}`, 12, true, [100, 100, 100]);
+    y += 5;
+
+    if (project.selectedIdea) {
+      addText('VIDEO IDEA', 12, true, [249, 115, 22]);
+      addText(`Title: ${project.selectedIdea.title}`, 10, true, [0, 0, 0]);
+      addText(`Hook: ${project.selectedIdea.hook}`, 10, false, [50, 50, 50]);
+      addText(`Description: ${project.selectedIdea.description}`, 10, false, [50, 50, 50]);
+      y += 5;
+    }
+
+    if (project.script) {
+      addText('VIDEO SCRIPT', 12, true, [249, 115, 22]);
+      addText('The Hook:', 10, true, [0, 0, 0]);
+      addText(project.script.hook, 10, false, [50, 50, 50]);
+      addText('Introduction:', 10, true, [0, 0, 0]);
+      addText(project.script.intro, 10, false, [50, 50, 50]);
+      y += 5;
+      
+      project.script.segments.forEach((s, i) => {
+        addText(`Segment ${i + 1}: ${s.title}`, 10, true, [0, 0, 0]);
+        addText(s.content, 10, false, [50, 50, 50]);
+      });
+      y += 5;
+    }
+
+    if (project.seo) {
+      addText('SEO METADATA', 12, true, [249, 115, 22]);
+      addText(`Title: ${project.seo.title}`, 10, true, [0, 0, 0]);
+      addText(`Description: ${project.seo.description}`, 10, false, [50, 50, 50]);
+      addText(`Tags: ${project.seo.tags.join(', ')}`, 9, false, [100, 100, 100]);
+      y += 5;
+    }
+
+    if (project.socialCaptions) {
+      addText('SOCIAL MEDIA CAPTIONS', 12, true, [249, 115, 22]);
+      addText('Facebook:', 10, true, [0, 0, 0]);
+      addText(project.socialCaptions.facebook, 10, false, [50, 50, 50]);
+      addText('Instagram:', 10, true, [0, 0, 0]);
+      addText(project.socialCaptions.instagram, 10, false, [50, 50, 50]);
+      y += 5;
+    }
+
+    doc.save(`vidflow-${project.id}.pdf`);
+    toast.success('Downloaded PDF package!');
   };
 
   const downloadFile = (format: 'txt' | 'md') => {
@@ -65,6 +158,7 @@ export default function ExportModule({ project, onBack, onReset }: ExportModuleP
   const sections = [
     { id: 'idea', name: 'Video Idea', status: !!project.selectedIdea },
     { id: 'script', name: 'Full Script', status: !!project.script },
+    { id: 'video', name: 'Video Breakdown', status: !!project.videoBreakdown },
     { id: 'seo', name: 'SEO Metadata', status: !!project.seo },
     { id: 'thumbnail', name: 'Thumbnail Prompt', status: !!project.thumbnailPrompt },
     { id: 'social', name: 'Social Captions', status: !!project.socialCaptions },
@@ -109,7 +203,7 @@ export default function ExportModule({ project, onBack, onReset }: ExportModuleP
       <div className="bg-[#111111] border border-zinc-800/50 p-10 rounded-[2.5rem] shadow-2xl shadow-black/50 flex flex-col md:flex-row items-center justify-between gap-8">
         <div className="flex-1">
           <h3 className="text-2xl font-bold text-white mb-2">Export Content Package</h3>
-          <p className="text-zinc-500">Download all assets in a single Markdown or TXT file, ready for your production workflow.</p>
+          <p className="text-zinc-500">Download all assets in a single Markdown, TXT, or PDF file, ready for your production workflow.</p>
         </div>
         <div className="flex flex-wrap gap-4">
           <button 
@@ -120,8 +214,15 @@ export default function ExportModule({ project, onBack, onReset }: ExportModuleP
             Copy All
           </button>
           <button 
-            onClick={() => downloadFile('md')}
+            onClick={downloadPDF}
             className="px-6 py-4 bg-orange-500 text-white font-bold rounded-2xl hover:bg-orange-600 transition-all flex items-center gap-2 active:scale-95 shadow-lg shadow-orange-500/20"
+          >
+            <FileDown className="w-5 h-5" />
+            Download .PDF
+          </button>
+          <button 
+            onClick={() => downloadFile('md')}
+            className="px-6 py-4 bg-zinc-800 text-white font-bold rounded-2xl hover:bg-zinc-700 transition-all flex items-center gap-2 active:scale-95"
           >
             <Download className="w-5 h-5" />
             Download .MD

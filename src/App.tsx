@@ -36,10 +36,11 @@ import {
   BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { cn } from './lib/utils';
-import { ProjectType, ProjectData, VideoIdea, VideoScript, SEOMetadata, ThumbnailPrompt, SocialCaptions } from './types';
+import { ProjectType, ProjectData, VideoIdea, VideoScript, SEOMetadata, ThumbnailPrompt, SocialCaptions, RoadmapData, RoadmapItem } from './types';
+import { LANGUAGES } from './constants';
 
 // Components
 import IdeaGenerator from './components/IdeaGenerator';
@@ -48,10 +49,12 @@ import SEOGenerator from './components/SEOGenerator';
 import ThumbnailGenerator from './components/ThumbnailGenerator';
 import SocialGenerator from './components/SocialGenerator';
 import ExportModule from './components/ExportModule';
+import ClientManager from './components/ClientManager';
+import VideoBuilder from './components/VideoBuilder';
+import ServiceGigGenerator from './components/ServiceGigGenerator';
+import BlueprintsView from './components/BlueprintsView';
 
-// Initialize Gemini
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
+// Storage Key
 const STORAGE_KEY = 'vidflow_projects_v1';
 
 export default function App() {
@@ -59,6 +62,12 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectData | null>(null);
+  const [defaultLanguage, setDefaultLanguage] = useState(() => {
+    return localStorage.getItem('vidflow_default_language') || 'English';
+  });
+  const [roadmap, setRoadmap] = useState<RoadmapData | null>(null);
+  const [isGeneratingRoadmap, setIsGeneratingRoadmap] = useState(false);
+  const [showRoadmapModal, setShowRoadmapModal] = useState(false);
 
   // Load projects from localStorage
   useEffect(() => {
@@ -77,19 +86,45 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
   }, [projects]);
 
+  useEffect(() => {
+    localStorage.setItem('vidflow_default_language', defaultLanguage);
+  }, [defaultLanguage]);
+
   const createNewProject = () => {
     const newProject: ProjectData = {
       id: Math.random().toString(36).substring(7),
       name: `Project ${projects.length + 1}`,
+      clientName: '',
       niche: '',
       targetAudience: '',
+      contentGoal: '',
       videoType: 'education',
+      targetLanguage: defaultLanguage,
       currentStep: 0,
       updatedAt: Date.now(),
     };
     setProjects([newProject, ...projects]);
     setCurrentProject(newProject);
     setActiveTab('editor');
+  };
+
+  const createProjectFromBlueprint = (blueprint: any) => {
+    const newProject: ProjectData = {
+      id: Math.random().toString(36).substring(7),
+      name: blueprint.title,
+      clientName: 'Blueprint Client',
+      niche: 'Product Ads',
+      targetAudience: 'E-commerce Owners',
+      contentGoal: 'Sales & Conversion',
+      videoType: 'review',
+      targetLanguage: defaultLanguage,
+      currentStep: 0,
+      updatedAt: Date.now(),
+    };
+    setProjects([newProject, ...projects]);
+    setCurrentProject(newProject);
+    setActiveTab('editor');
+    toast.success(`Started project from blueprint: ${blueprint.title}`);
   };
 
   const updateProject = (data: Partial<ProjectData>) => {
@@ -114,6 +149,50 @@ export default function App() {
     }
   };
 
+  const generateRoadmap = async () => {
+    const latestProject = projects[0];
+    if (!latestProject || !latestProject.niche || !latestProject.targetAudience) {
+      toast.error('Please create a project with niche and audience first.');
+      return;
+    }
+
+    setIsGeneratingRoadmap(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Generate a 30-day content roadmap for a YouTube channel in the niche: "${latestProject.niche}" targeting "${latestProject.targetAudience}". 
+        Return a JSON array of 30 items, each with: day (1-30), topic (short title), type (e.g., Tutorial, Vlog, News), strategy (one sentence).`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                day: { type: Type.NUMBER },
+                topic: { type: Type.STRING },
+                type: { type: Type.STRING },
+                strategy: { type: Type.STRING },
+              },
+              required: ['day', 'topic', 'type', 'strategy'],
+            },
+          },
+        },
+      });
+
+      const items = JSON.parse(response.text);
+      setRoadmap({ niche: latestProject.niche, audience: latestProject.targetAudience, items });
+      setShowRoadmapModal(true);
+      toast.success('30-day roadmap generated!');
+    } catch (error) {
+      console.error('Roadmap generation failed', error);
+      toast.error('Failed to generate roadmap.');
+    } finally {
+      setIsGeneratingRoadmap(false);
+    }
+  };
+
   const clearAllProjects = () => {
     if (confirm('Are you sure you want to clear all projects? This cannot be undone.')) {
       setProjects([]);
@@ -125,21 +204,24 @@ export default function App() {
   };
 
   const steps = [
+    { id: 'clientSetup', name: 'Client Setup', icon: Users },
     { id: 'selectedIdea', name: 'Idea Lab', icon: Lightbulb },
     { id: 'script', name: 'Script Studio', icon: FileText },
-    { id: 'seo', name: 'SEO Optimizer', icon: Search },
+    { id: 'videoBreakdown', name: 'Video Builder', icon: Play },
     { id: 'thumbnailPrompt', name: 'Thumbnail Lab', icon: ImageIcon },
-    { id: 'socialCaptions', name: 'Social Captions', icon: Share2 },
-    { id: 'export', name: 'Final Review', icon: Rocket },
+    { id: 'seo', name: 'SEO Optimizer', icon: Search },
+    { id: 'socialCaptions', name: 'Social Pack', icon: Share2 },
+    { id: 'export', name: 'Export Center', icon: Rocket },
   ];
 
   const navigation = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
+    { id: 'blueprints', name: 'Success Blueprints', icon: Target },
     { id: 'editor', name: 'Content Editor', icon: Play, disabled: !currentProject },
     { id: 'history', name: 'Project History', icon: History },
-    { id: 'monetization', name: 'Monetization', icon: DollarSign },
+    { id: 'gigs', name: 'Service Gigs', icon: DollarSign },
+    { id: 'monetization', name: 'Pricing Plans', icon: BarChart3 },
     { id: 'channels', name: 'Channel Settings', icon: Globe },
-    { id: 'documentation', name: 'Documentation', icon: BookOpen },
   ];
 
   return (
@@ -147,65 +229,83 @@ export default function App() {
       <Toaster position="top-right" theme="dark" />
       {/* Sidebar */}
       <aside className={cn(
-        "fixed left-0 top-0 h-full bg-[#0F0F0F] border-r border-zinc-800/50 transition-all duration-300 z-50",
+        "fixed left-0 top-0 h-full bg-[#0F0F0F] border-r border-zinc-800/50 transition-all duration-300 z-50 flex flex-col",
         isSidebarOpen ? "w-64" : "w-20"
       )}>
-        <div className="p-6 flex flex-col gap-2">
+        <div 
+          onClick={() => { setActiveTab('dashboard'); setCurrentProject(null); }}
+          className="p-6 flex flex-col gap-2 cursor-pointer group/logo active:scale-95 transition-transform flex-shrink-0"
+        >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-orange-500/20">
+            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-orange-500/20 group-hover/logo:scale-110 transition-transform">
               <Play className="w-6 h-6 text-white fill-white" />
             </div>
             {isSidebarOpen && (
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-white tracking-tight">VidFlow <span className="text-orange-500">AI</span></span>
-                <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-[0.2em]">User Edition (Creators) V1.0</span>
+                <span className="text-xl font-bold text-white tracking-tight group-hover/logo:text-orange-500 transition-colors">VidFlow <span className="text-orange-500 group-hover/logo:text-white transition-colors">AI</span></span>
+                <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Freelancer Edition V3.0</span>
               </div>
             )}
           </div>
         </div>
 
-        <nav className="mt-6 px-3 space-y-1">
-          {navigation.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => !item.disabled && setActiveTab(item.id)}
-              disabled={item.disabled}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
-                activeTab === item.id 
-                  ? "bg-orange-500/10 text-orange-500" 
-                  : item.disabled ? "opacity-30 cursor-not-allowed" : "hover:bg-zinc-800/50 hover:text-white"
-              )}
-            >
-              <item.icon className={cn(
-                "w-5 h-5 transition-colors",
-                activeTab === item.id ? "text-orange-500" : "text-zinc-500 group-hover:text-white"
-              )} />
-              {isSidebarOpen && <span className="font-medium">{item.name}</span>}
-            </button>
-          ))}
+        <nav className="mt-4 px-3 space-y-1.5 flex-1 overflow-y-auto custom-scrollbar pb-6">
+          {navigation.map((item) => {
+            return (
+              <button
+                key={item.id}
+                onClick={() => !item.disabled && setActiveTab(item.id)}
+                disabled={item.disabled}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all group",
+                  activeTab === item.id 
+                    ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20" 
+                    : item.disabled ? "opacity-30 cursor-not-allowed" : "hover:bg-zinc-800/50 hover:text-white"
+                )}
+              >
+                <item.icon className={cn(
+                  "w-5 h-5 transition-colors",
+                  activeTab === item.id ? "text-white" : "text-zinc-500 group-hover:text-white"
+                )} />
+                {isSidebarOpen && <span className="font-bold text-sm tracking-tight">{item.name}</span>}
+              </button>
+            );
+          })}
         </nav>
 
-        <div className="absolute bottom-6 left-0 w-full px-3">
+        <div className="mt-auto w-full px-4 pb-8 flex-shrink-0">
           <div className={cn(
-            "p-4 rounded-2xl bg-gradient-to-br from-orange-500/20 to-transparent border border-orange-500/20",
+            "p-5 rounded-[2rem] bg-gradient-to-br from-orange-500/10 to-transparent border border-orange-500/10 shadow-xl shadow-black/20",
             !isSidebarOpen && "flex justify-center"
           )}>
             {isSidebarOpen ? (
-              <>
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="w-4 h-4 text-orange-500" />
-                  <span className="text-[10px] font-bold text-white uppercase tracking-widest">User Edition V1.0</span>
+              <div className="space-y-5">
+                <div 
+                  onClick={() => setActiveTab('documentation')}
+                  className="flex items-center gap-3 cursor-pointer group/doc"
+                >
+                  <div className="w-9 h-9 bg-zinc-800/50 rounded-xl flex items-center justify-center group-hover/doc:bg-orange-500/20 transition-all border border-zinc-800 group-hover/doc:border-orange-500/30">
+                    <BookOpen className="w-4 h-4 text-zinc-400 group-hover/doc:text-orange-500 transition-colors" />
+                  </div>
+                  <span className="text-sm font-bold text-white group-hover/doc:text-orange-500 transition-colors tracking-tight">Documentation</span>
                 </div>
-                <p className="text-[10px] text-zinc-500 mb-3">AI-powered YouTube content automation for creators.</p>
+
                 <button 
                   onClick={() => setActiveTab('monetization')}
-                  className="w-full py-2 bg-orange-500 text-white text-[10px] font-bold rounded-xl hover:bg-orange-600 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3.5 bg-orange-500 text-white text-[11px] font-bold rounded-2xl hover:bg-orange-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 active:scale-95"
                 >
-                  <Sparkles className="w-3 h-3" />
+                  <Sparkles className="w-3.5 h-3.5" />
                   Upgrade to Pro
                 </button>
-              </>
+
+                <div className="pt-4 border-t border-zinc-800/50 space-y-2.5">
+                  <p className="text-[10px] text-zinc-500 leading-relaxed font-medium">AI-powered YouTube content automation for creators.</p>
+                  <div className="flex items-center gap-2.5 opacity-60">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                    <span className="text-[9px] font-bold text-white uppercase tracking-[0.15em]">Freelancer Edition V3.0</span>
+                  </div>
+                </div>
+              </div>
             ) : (
               <button 
                 onClick={() => setActiveTab('monetization')}
@@ -265,7 +365,7 @@ export default function App() {
                   ))}
                 </div>
                 <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                  Step {currentProject.currentStep + 1}/6
+                  Step {currentProject.currentStep + 1}/8
                 </span>
               </div>
             )}
@@ -297,8 +397,13 @@ export default function App() {
                   onCreate={createNewProject}
                   onDelete={deleteProject}
                   onClearAll={clearAllProjects}
+                  onGenerateRoadmap={generateRoadmap}
+                  isGeneratingRoadmap={isGeneratingRoadmap}
+                  onNavigateToBlueprints={() => setActiveTab('blueprints')}
                 />
               )}
+
+              {activeTab === 'blueprints' && <BlueprintsView onCreateFromBlueprint={createProjectFromBlueprint} />}
               
               {activeTab === 'editor' && currentProject && (
                 <div className="space-y-8">
@@ -327,44 +432,58 @@ export default function App() {
                   {/* Step Content */}
                   <div className="min-h-[600px]">
                     {currentProject.currentStep === 0 && (
-                      <IdeaGenerator 
+                      <ClientManager 
                         project={currentProject} 
                         onUpdate={updateProject} 
                         onNext={() => updateProject({ currentStep: 1 })} 
                       />
                     )}
                     {currentProject.currentStep === 1 && (
-                      <ScriptGenerator 
+                      <IdeaGenerator 
                         project={currentProject} 
                         onUpdate={updateProject} 
                         onNext={() => updateProject({ currentStep: 2 })} 
                       />
                     )}
                     {currentProject.currentStep === 2 && (
-                      <SEOGenerator 
+                      <ScriptGenerator 
                         project={currentProject} 
                         onUpdate={updateProject} 
                         onNext={() => updateProject({ currentStep: 3 })} 
                       />
                     )}
                     {currentProject.currentStep === 3 && (
-                      <ThumbnailGenerator 
+                      <VideoBuilder 
                         project={currentProject} 
                         onUpdate={updateProject} 
                         onNext={() => updateProject({ currentStep: 4 })} 
                       />
                     )}
                     {currentProject.currentStep === 4 && (
-                      <SocialGenerator 
+                      <ThumbnailGenerator 
                         project={currentProject} 
                         onUpdate={updateProject} 
                         onNext={() => updateProject({ currentStep: 5 })} 
                       />
                     )}
                     {currentProject.currentStep === 5 && (
+                      <SEOGenerator 
+                        project={currentProject} 
+                        onUpdate={updateProject} 
+                        onNext={() => updateProject({ currentStep: 6 })} 
+                      />
+                    )}
+                    {currentProject.currentStep === 6 && (
+                      <SocialGenerator 
+                        project={currentProject} 
+                        onUpdate={updateProject} 
+                        onNext={() => updateProject({ currentStep: 7 })} 
+                      />
+                    )}
+                    {currentProject.currentStep === 7 && (
                       <ExportModule 
                         project={currentProject} 
-                        onBack={() => updateProject({ currentStep: 4 })} 
+                        onBack={() => updateProject({ currentStep: 6 })} 
                         onReset={() => { setCurrentProject(null); setActiveTab('dashboard'); }} 
                       />
                     )}
@@ -380,10 +499,97 @@ export default function App() {
                 />
               )}
 
+              {activeTab === 'gigs' && (
+                currentProject || projects.length > 0 ? (
+                  <ServiceGigGenerator 
+                    project={currentProject || projects[0]} 
+                    onUpdate={updateProject}
+                  />
+                ) : (
+                  <div className="text-center py-20 bg-zinc-900/30 rounded-[2.5rem] border border-dashed border-zinc-800">
+                    <div className="w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <DollarSign className="w-8 h-8 text-zinc-700" />
+                    </div>
+                    <p className="text-zinc-500 font-medium">No projects found. Create a project first to generate service gigs.</p>
+                    <button 
+                      onClick={createNewProject}
+                      className="mt-6 px-6 py-3 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600 transition-all active:scale-95"
+                    >
+                      Start New Project
+                    </button>
+                  </div>
+                )
+              )}
               {activeTab === 'monetization' && <MonetizationView />}
-              {activeTab === 'channels' && <ChannelSettingsView />}
+              {activeTab === 'channels' && (
+                <ChannelSettingsView 
+                  defaultLanguage={defaultLanguage} 
+                  setDefaultLanguage={setDefaultLanguage} 
+                />
+              )}
               {activeTab === 'documentation' && <DocumentationView />}
             </motion.div>
+          </AnimatePresence>
+
+          {/* Roadmap Modal */}
+          <AnimatePresence>
+            {showRoadmapModal && roadmap && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowRoadmapModal(false)}
+                  className="absolute inset-0 bg-black/90 backdrop-blur-sm"
+                />
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                  className="relative w-full max-w-5xl max-h-[85vh] bg-[#111111] border border-zinc-800 rounded-[3rem] shadow-2xl overflow-hidden flex flex-col"
+                >
+                  <div className="p-8 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+                    <div>
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-3">
+                        <Sparkles className="w-6 h-6 text-orange-500" />
+                        30-Day Content Roadmap
+                      </h3>
+                      <p className="text-zinc-500 text-sm mt-1">Niche: {roadmap.niche} • Target: {roadmap.audience}</p>
+                    </div>
+                    <button 
+                      onClick={() => setShowRoadmapModal(false)}
+                      className="p-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl transition-all"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {roadmap.items.map((item) => (
+                        <div key={item.day} className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-3xl hover:border-orange-500/30 transition-all group">
+                          <div className="flex items-center justify-between mb-4">
+                            <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest bg-orange-500/10 px-3 py-1 rounded-full">Day {item.day}</span>
+                            <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">{item.type}</span>
+                          </div>
+                          <h4 className="font-bold text-white mb-2 group-hover:text-orange-500 transition-colors">{item.topic}</h4>
+                          <p className="text-xs text-zinc-500 leading-relaxed">{item.strategy}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-8 border-t border-zinc-800 bg-zinc-900/50 flex justify-end">
+                    <button 
+                      onClick={() => setShowRoadmapModal(false)}
+                      className="px-8 py-3 bg-orange-500 text-white font-bold rounded-2xl hover:bg-orange-600 transition-all active:scale-95 shadow-lg shadow-orange-500/20"
+                    >
+                      Got it, Let's Start!
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
           </AnimatePresence>
 
           {/* Global Footer */}
@@ -409,18 +615,21 @@ export default function App() {
 
 // --- Sub-components ---
 
-function DashboardView({ projects, onSelect, onCreate, onDelete, onClearAll }: { 
+function DashboardView({ projects, onSelect, onCreate, onDelete, onClearAll, onGenerateRoadmap, isGeneratingRoadmap, onNavigateToBlueprints }: { 
   projects: ProjectData[], 
   onSelect: (p: ProjectData) => void,
   onCreate: () => void,
   onDelete: (id: string, e: React.MouseEvent) => void,
-  onClearAll: () => void
+  onClearAll: () => void,
+  onGenerateRoadmap: () => void,
+  isGeneratingRoadmap: boolean,
+  onNavigateToBlueprints: () => void
 }) {
   return (
     <div className="space-y-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-4xl font-bold text-white tracking-tight">Creator <span className="text-orange-500">Dashboard</span></h2>
+          <h2 className="text-4xl font-bold text-white tracking-tight">Freelancer <span className="text-orange-500">Dashboard</span></h2>
           <p className="text-zinc-500 mt-2">Your YouTube automation command center. Idea to assets in minutes.</p>
         </div>
         <div className="flex gap-4">
@@ -456,10 +665,11 @@ function DashboardView({ projects, onSelect, onCreate, onDelete, onClearAll }: {
                   <div 
                     key={project.id} 
                     onClick={() => onSelect(project)}
-                    className="flex items-center justify-between p-6 bg-zinc-900/50 rounded-3xl border border-zinc-800/30 hover:border-orange-500/30 transition-all cursor-pointer group"
+                    className="flex items-center justify-between p-6 bg-zinc-900/40 rounded-[2rem] border border-zinc-800/50 hover:border-orange-500/40 hover:bg-zinc-900/60 transition-all cursor-pointer group relative overflow-hidden"
                   >
-                    <div className="flex items-center gap-5">
-                      <div className="w-14 h-14 bg-zinc-800 rounded-2xl flex items-center justify-center group-hover:bg-orange-500/10 transition-colors">
+                    <div className="absolute inset-0 bg-gradient-to-r from-orange-500/0 via-orange-500/0 to-orange-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="flex items-center gap-5 relative z-10">
+                      <div className="w-14 h-14 bg-zinc-800/50 rounded-2xl flex items-center justify-center group-hover:bg-orange-500/10 transition-colors border border-zinc-800/50 group-hover:border-orange-500/20">
                         <Play className="w-6 h-6 text-zinc-600 group-hover:text-orange-500 transition-colors" />
                       </div>
                       <div>
@@ -467,24 +677,33 @@ function DashboardView({ projects, onSelect, onCreate, onDelete, onClearAll }: {
                           {project.selectedIdea?.title || project.name}
                         </p>
                         <div className="flex items-center gap-3 mt-1">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                              Step {project.currentStep + 1}/6
+                            </span>
+                          </div>
+                          <div className="w-1 h-1 rounded-full bg-zinc-800" />
                           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                            Step {project.currentStep + 1}/6
+                            {project.targetLanguage || 'English'}
                           </span>
-                          <div className="w-1 h-1 rounded-full bg-zinc-700" />
-                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                          <div className="w-1 h-1 rounded-full bg-zinc-800" />
+                          <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">
                             {new Date(project.updatedAt).toLocaleDateString()}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 relative z-10">
                       <button 
                         onClick={(e) => onDelete(project.id, e)}
-                        className="p-2 text-zinc-600 hover:text-red-500 transition-colors"
+                        className="p-2.5 bg-zinc-800/50 rounded-xl text-zinc-600 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-90"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
-                      <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-white transition-colors" />
+                      <div className="w-10 h-10 rounded-xl bg-zinc-800/50 flex items-center justify-center group-hover:bg-white group-hover:text-black transition-all">
+                        <ChevronRight className="w-5 h-5" />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -502,11 +721,39 @@ function DashboardView({ projects, onSelect, onCreate, onDelete, onClearAll }: {
 
         <div className="space-y-8">
           <div className="bg-gradient-to-br from-orange-500 to-orange-700 p-10 rounded-[2.5rem] text-white relative overflow-hidden group shadow-2xl shadow-orange-500/20">
-            <Sparkles className="absolute top-6 right-6 w-16 h-16 text-white/20 group-hover:scale-110 transition-transform" />
+            <Sparkles className={cn(
+              "absolute top-6 right-6 w-16 h-16 text-white/20 transition-all",
+              isGeneratingRoadmap ? "animate-spin" : "group-hover:scale-110"
+            )} />
             <h3 className="text-2xl font-bold mb-3">AI Strategy Lab</h3>
             <p className="text-sm text-white/80 mb-8 leading-relaxed">Let VidFlow analyze your niche and suggest a 30-day content roadmap for explosive growth.</p>
-            <button className="w-full py-4 bg-white text-orange-600 font-bold rounded-2xl hover:bg-zinc-100 transition-all shadow-xl active:scale-95">
-              Generate Roadmap
+            <button 
+              onClick={onGenerateRoadmap}
+              disabled={isGeneratingRoadmap}
+              className="w-full py-4 bg-white text-orange-600 font-bold rounded-2xl hover:bg-zinc-100 transition-all shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isGeneratingRoadmap ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                  Analyzing Niche...
+                </>
+              ) : (
+                'Generate Roadmap'
+              )}
+            </button>
+          </div>
+
+          <div className="bg-[#111111] border border-zinc-800/50 p-10 rounded-[2.5rem] shadow-2xl shadow-black/50 relative overflow-hidden group border-orange-500/20">
+            <div className="absolute top-0 right-0 p-8">
+              <Target className="w-12 h-12 text-orange-500/20 group-hover:scale-110 transition-transform" />
+            </div>
+            <h3 className="text-2xl font-bold text-white mb-4">Success Blueprints</h3>
+            <p className="text-sm text-zinc-500 mb-8 leading-relaxed">Copy proven video concepts that are currently trending. Turn product photos into cinematic ads in minutes.</p>
+            <button 
+              onClick={onNavigateToBlueprints}
+              className="w-full py-4 bg-zinc-800 text-white font-bold rounded-2xl hover:bg-orange-500 transition-all flex items-center justify-center gap-2 active:scale-95"
+            >
+              Explore Blueprints <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 
@@ -567,12 +814,12 @@ function HistoryView({ projects, onSelect, onDelete }: {
             <div className="space-y-3 mt-6">
               <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest">
                 <span className="text-zinc-500">Progress</span>
-                <span className="text-orange-500">{Math.round(((project.currentStep + 1) / 6) * 100)}%</span>
+                <span className="text-orange-500">{Math.round(((project.currentStep + 1) / 8) * 100)}%</span>
               </div>
               <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-orange-500 transition-all duration-500" 
-                  style={{ width: `${((project.currentStep + 1) / 6) * 100}%` }}
+                  style={{ width: `${((project.currentStep + 1) / 8) * 100}%` }}
                 />
               </div>
             </div>
@@ -589,7 +836,10 @@ function HistoryView({ projects, onSelect, onDelete }: {
   );
 }
 
-function ChannelSettingsView() {
+function ChannelSettingsView({ defaultLanguage, setDefaultLanguage }: { 
+  defaultLanguage: string, 
+  setDefaultLanguage: (l: string) => void 
+}) {
   const [channels, setChannels] = useState([
     { id: 1, name: 'Main Channel', niche: 'Tech & AI', enabled: true },
     { id: 2, name: 'Shorts Channel', niche: 'Entertainment', enabled: false },
@@ -675,6 +925,18 @@ function ChannelSettingsView() {
                 <button className="flex-1 py-3 bg-zinc-800 text-zinc-400 text-xs font-bold rounded-xl hover:bg-zinc-700">Gemini 1.5 Pro</button>
               </div>
             </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Default Target Language</label>
+              <select 
+                value={defaultLanguage}
+                onChange={(e) => setDefaultLanguage(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-orange-500 transition-colors"
+              >
+                {LANGUAGES.map(lang => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="p-6 bg-zinc-900/50 rounded-2xl border border-zinc-800/50">
@@ -711,10 +973,10 @@ function ChannelSettingsView() {
 
 function DocumentationView() {
   return (
-    <div className="max-w-4xl mx-auto space-y-12">
+    <div className="max-w-4xl mx-auto space-y-16 pb-20">
       <div className="hidden print-only text-center border-b pb-8 mb-8">
-        <h1 className="text-3xl font-bold">VidFlow AI – User Edition (Creators) V1.0</h1>
-        <p className="text-sm">Official Documentation & User Guide</p>
+        <h1 className="text-3xl font-bold">VidFlow AI – User Edition (Creators) V3.0-Multi</h1>
+        <p className="text-sm">Official Documentation & User Guide (Dual Language Edition)</p>
         <p className="text-xs mt-2">Powered by saasskul.com | support@saasskul.com</p>
       </div>
 
@@ -754,8 +1016,8 @@ function DocumentationView() {
       <div className="bg-[#111111] border border-zinc-800/50 p-10 rounded-[3rem] space-y-8">
         <h3 className="text-2xl font-bold text-white">How to Use VidFlow AI</h3>
         <div className="space-y-6">
-          {[
-            { step: '1', title: 'Idea Lab', desc: 'Generate 10 viral ideas based on your niche. Select one to proceed.' },
+          { [
+            { step: '1', title: 'Idea Lab', desc: 'Generate 10 viral ideas based on your niche and target language. Select one to proceed.' },
             { step: '2', title: 'Script Studio', desc: 'Generate a structured script with custom modes and tones.' },
             { step: '3', title: 'SEO Optimizer', desc: 'Get optimized titles, descriptions, and tags for YouTube.' },
             { step: '4', title: 'Thumbnail Lab', desc: 'Receive a detailed visual prompt for AI image generators.' },
@@ -835,58 +1097,58 @@ function DocumentationView() {
 function MonetizationView() {
   const plans = [
     {
-      name: 'V1 – Basic',
+      name: 'V1 – Starter',
       subtitle: 'Single Language',
-      price: '$29',
+      price: '$99',
       period: 'one-time',
       features: [
         'Idea Generator',
         'Script Generator',
         'SEO Generator',
-        'Manual Video Workflow',
+        'Basic Video Workflow',
         'Frontend Architecture'
       ],
-      cta: 'Get Basic',
-      target: 'Beginner Creators'
+      cta: 'Get Starter',
+      target: 'New Freelancers'
     },
     {
-      name: 'V2 – Dual',
+      name: 'V2 – Professional',
       subtitle: 'Dual Language',
-      price: '$59',
+      price: '$149',
       period: 'one-time',
       features: [
         'English + 1 Language',
         'Multilingual Script Gen',
         'Multilingual SEO Metadata',
         'All V1 Features',
-        'Frontend Architecture'
+        'Advanced Workflow'
       ],
-      cta: 'Get Dual',
-      popular: true,
-      target: 'International Creators'
+      cta: 'Get Pro',
+      target: 'Active Freelancers'
     },
     {
-      name: 'V3 – Multi',
+      name: 'V3 – Advanced Automation',
       subtitle: 'Multi-Language',
-      price: '$129',
+      price: '$249',
       period: 'one-time',
       features: [
-        '10–50 Languages',
-        'Global SEO Tags',
-        'Translated Captions',
-        'Multilingual Scripts',
-        'Frontend Architecture'
+        'Video Generator',
+        'Thumbnail Generator',
+        'Social Media Content',
+        'Complete Channel Automation',
+        'Multi-Language Support'
       ],
-      cta: 'Get Global',
-      target: 'Global Creators'
+      cta: 'Get Advanced',
+      popular: true,
+      target: 'Global Agencies'
     }
   ];
 
   return (
     <div className="space-y-12">
       <div className="text-center max-w-2xl mx-auto">
-        <h2 className="text-4xl font-bold text-white mb-4">User Edition <span className="text-orange-500">(Creators)</span></h2>
-        <p className="text-zinc-400">Targeting beginners and solo creators with a powerful frontend-only architecture.</p>
+        <h2 className="text-4xl font-bold text-white mb-4">Freelancer Edition <span className="text-orange-500">(V3.0)</span></h2>
+        <p className="text-zinc-400">Empowering freelancers to sell complete YouTube channel automation services.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
